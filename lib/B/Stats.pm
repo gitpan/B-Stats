@@ -1,5 +1,5 @@
 package B::Stats;
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 =head1 NAME
 
@@ -44,7 +44,7 @@ Single ops can be called multiple times.
 
 =item -a I<all (default)>
 
-Same as -c,-e,-r: static compile-time and end-time and dynamic run-time.
+Same as -c,-e,-r: static compile-time, end-time and dynamic run-time.
 
 =item -t I<table>
 
@@ -84,11 +84,15 @@ Print output only to this file. Default: STDERR
 
 =cut
 
+our (%B_inc, %B_env);
+BEGIN { %B_inc = %INC; }
+
 use strict;
-# B includes 14 files and 3821 lines. TODO: add it to our XS
-use B qw(main_root OPf_KIDS walksymtable);
-# XSLoader adds 0 files and 0 lines, already with B
-use XSLoader;
+# B includes 14 files and 3821 lines. overhead subtracted with B::Stats::Minus
+use B;
+use B::Stats::Minus;
+# XSLoader adds 0 files and 0 lines, already with B.
+# Changed to DynaLoader
 # Opcodes-0.10 adds 6 files and 5303-3821 lines: Carp, AutoLoader, subs
 # Opcodes-0.11 adds 2 files and 4141-3821 lines: subs
 # use Opcodes; # deferred to run-time below
@@ -98,15 +102,30 @@ my ($c_count, $e_count, $r_count);
 
 # check options
 sub import {
-  $DB::single = 1 if defined &DB::deep;
-print STDERR "opt: ",@_,"; "; # for Debugging
-  for (@_) { # XXX switch bundling without Getopt bloat
-    if (/^-?([acerxtFu])$/) { $opt{$1} = 1; }
+  $DB::single = 1 if defined &DB::DB;
+#print STDERR "opt: ",join(',',@_),"; "; # for Debugging
+  for (@_) { # switch bundling without Getopt bloat
+    if (/^-?([acerxtFu])(.*)$/) {
+      $opt{$1} = 1;
+      my $rest = $2;
+      do {
+	if ($rest =~ /^-?([acerxtFu])(.*)$/) {
+	  $opt{$1} = 1;
+	  $rest = $2;
+	}
+      } while $rest;
+    }
   }
   # -ffilter and -llog not yet
   $opt{a} = 1 if !$opt{c} and !$opt{e} and !$opt{r}; # default
   $opt{c} = $opt{e} = $opt{r} = 1 if $opt{a};
-warn "%opt: ",keys %opt,"\n"; # for Debugging
+#warn "%opt: ",keys %opt,"\n"; # for Debugging
+}
+
+sub _class {
+    my $name = ref shift;
+    $name =~ s/^.*:://;
+    return $name;
 }
 
 # static
@@ -115,13 +134,19 @@ sub _count_op {
   $nops++; # count also null ops
   if ($$op) {
     $static->{name}->{$op->name}++;
-    $static->{class}->{B::class($op)}++;
+    $static->{class}->{_class($op)}++;
   }
+}
+
+# collect subs and stashes before B is loaded
+# XXX not yet used. we rather use B::Stats::Minus
+sub _collect_env {
+  %B_env = { 'B::Stats' => 1};
+  _xs_collect_env() if $INC{'DynaLoader.pm'};
 }
 
 # from B::Utils
 our $sub;
-
 sub B::GV::_mypush_starts {
   my $name = $_[0]->STASH->NAME."::".$_[0]->SAFENAME;
   return unless ${$_[0]->CV};
@@ -130,45 +155,65 @@ sub B::GV::_mypush_starts {
       and $cv->PADLIST->ARRAY
       and $cv->PADLIST->ARRAY->can("ARRAY"))
   {
-    push @all_subs, { root => $_->ROOT, start => $_->START}
-      for grep { B::class($_) eq "CV" } $cv->PADLIST->ARRAY->ARRAY;
+    push @all_subs, $_->ROOT
+      for grep { _class($_) eq "CV" } $cv->PADLIST->ARRAY->ARRAY;
   }
   return unless ${$cv->START} and ${$cv->ROOT};
-  # $starts{$name} = $cv->START;
   $roots{$name} = $cv->ROOT;
 };
 sub B::SPECIAL::_mypush_starts{}
 
 sub _walkops {
   my ($callback, $data) = @_;
-  %roots  = ( '__MAIN__' =>  main_root()  );
-  walksymtable(\%main::,
+  # _collect_env() unless %B_env;
+  require 'B.pm';
+  %roots  = ( '__MAIN__' =>  B::main_root()  );
+  _walksymtable(\%main::,
 	       '_mypush_starts',
 	       sub {
 		 return if scalar grep {$_[0] eq $_."::"} ('B::Stats');
 		 1;
 	       }, # Do not eat our own children!
 	       '');
-  push @all_subs, { root => $_->ROOT, start => $_->START}
-    for grep { B::class($_) eq "CV" } B::main_cv->PADLIST->ARRAY->ARRAY;
+  push @all_subs, $_->ROOT
+    for grep { _class($_) eq "CV" } B::main_cv->PADLIST->ARRAY->ARRAY;
   for $sub (keys %roots) {
     _walkoptree_simple($roots{$sub}, $callback, $data);
   }
   $sub = "__ANON__";
   for (@all_subs) {
-    _walkoptree_simple($_->{root}, $callback, $data);
+    _walkoptree_simple($_, $callback, $data);
   }
 }
 
 sub _walkoptree_simple {
   my ($op, $callback, $data) = @_;
   $callback->($op,$data);
-  if ($$op && ($op->flags & OPf_KIDS)) {
-    my $kid;
-    for ($kid = $op->first; $$kid; $kid = $kid->sibling) {
+  if ($$op && ($op->flags & B::OPf_KIDS)) {
+    for (my $kid = $op->first; $$kid; $kid = $kid->sibling) {
       _walkoptree_simple($kid, $callback, $data);
     }
   }
+}
+
+sub _walksymtable {
+    my ($symref, $method, $recurse, $prefix) = @_;
+    my ($sym, $ref, $fullname);
+    no strict 'refs';
+    $prefix = '' unless defined $prefix;
+    while (($sym, $ref) = each %$symref) {
+        $fullname = "*main::".$prefix.$sym;
+	if ($sym =~ /::$/) {
+	    $sym = $prefix . $sym;
+	    if (B::svref_2object(\*$sym)->NAME ne "main::" &&
+		$sym ne "<none>::" && &$recurse($sym))
+	    {
+               _walksymtable(\%$fullname, $method, $recurse, $sym);
+	    }
+	} else {
+           B::svref_2object(\*$fullname)->$method();
+	}
+    }
 }
 
 =item compile
@@ -201,15 +246,24 @@ General formatter
 sub output {
   my ($count, $ops, $name) = @_;
 
-  my $files = scalar keys %INC;
+  my $files = scalar keys %B_inc;
   my $lines = 0;
-  for (values %INC) {
+  for (values %B_inc) {
     print STDERR $_,"\n" if $opt{F};
     open IN, "<", "$_";
     # Todo: skip pod?
     while (<IN>) { chomp; s/#.*//; next if not length $_; $lines++; };
     close IN;
   }
+  my %name = (
+    'static compile-time' => 'c',
+    'static end-time'     => 'e',
+    'dynamic run-time'    => 'r'
+    );
+  my $key = $name{$name};
+  $files -= $B::Stats::Minus::overhead{$key}{_files};
+  $lines -= $B::Stats::Minus::overhead{$key}{_lines};
+  $ops -= $B::Stats::Minus::overhead{$key}{_ops};
   print STDERR "\nB::Stats $name:\nfiles=$files\tlines=$lines\tops=$ops\n";
   return if $opt{t} and $opt{u};
 
@@ -217,7 +271,8 @@ sub output {
   for (sort { $count->{name}->{$b} <=> $count->{name}->{$a} }
        keys %{$count->{name}}) {
     my $l = length $_;
-    print STDERR $_, " " x (10-$l), "\t", $count->{name}->{$_}, "\n";
+    my $c = $count->{name}->{$_} - $B::Stats::Minus::overhead{$key}{$_};
+    print STDERR $_, " " x (10-$l), "\t", $c, "\n";
   }
   unless ($opt{u}) {
     print STDERR "\nop class:\n";
@@ -233,19 +288,26 @@ sub output {
 
 -r formatter.
 
-Prepares count hash from @runtime array generated in XS and calls output
+Prepares count hash from the runtime generated structure in XS and calls output().
 
 =cut
 
 sub output_runtime {
   $r_count = {};
+
+  require DynaLoader;
+  our @ISA = ('DynaLoader');
+  DynaLoader::bootstrap('B::Stats', $VERSION);
+
   require Opcodes;
   my $maxo = Opcodes::opcodes();
+  # @optype only since 5.8.9 in B
+  my @optype = qw(OP UNOP BINOP LOGOP LISTOP PMOP SVOP PADOP PVOP LOOP COP);
   for my $i (0..$maxo-1) {
     if (my $count = rcount($i)) {
       my $name = Opcodes::opname($i);
       if ($name) {
-	my $class = $B::optype[ Opcodes::opclass($i) ];
+	my $class = $optype[ Opcodes::opclass($i) ];
 	$r_count->{name}->{ $name } += $count;
 	$r_count->{class}->{ $class } += $count;
 	$rops += $count;
@@ -311,5 +373,4 @@ END {
   output_table($c_count, $e_count, $r_count) if $opt{t};
 }
 
-XSLoader::load 'B::Stats', $VERSION;
 1;
