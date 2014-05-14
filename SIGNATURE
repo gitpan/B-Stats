@@ -1,5 +1,5 @@
 This file contains message digests of all files listed in MANIFEST,
-signed via the Module::Signature module, version 0.68.
+signed via the Module::Signature module, version 0.73.
 
 To verify the content in this distribution, first make sure you have
 Module::Signature installed, then type:
@@ -14,25 +14,24 @@ not run its Makefile.PL or Build.PL.
 -----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA1
 
-SHA1 692796613617dc02925bb83a895fb7cd69631546 .gitignore
+SHA1 a5c7caf8d419f9c53afb5077509576a2a12861bb .gitignore
 SHA1 012fe1ce01fb53ea10dfac7145ee7217b8b3ae85 LICENSE
-SHA1 1b288e637e1d0f4d8ea702bb4320896be4d955de MANIFEST
-SHA1 1601656252afd77d120ef8622b546a0449b412b1 META.json
-SHA1 669bd2b90df0e266d77c6f5894f0a3a3e4e7055a META.yml
-SHA1 061ce4b2de0f2c4da8c21fbed4c0db8cb6d93096 Makefile.PL
+SHA1 eac9e5be10794f2cefd4a83c55328bb2188793c7 MANIFEST
+SHA1 7bf6e519b2d19aa6ab27f46d2e385350aa9d4419 Makefile.PL
 SHA1 258baa397513b601ab8beacc75d49574173bdcc7 README
-SHA1 e9bd049233344f0fbd51d8bf8f4368bb827d34fb Stats.xs
-SHA1 3d578ab01b5ce75630b9f870a606b10d864de8ed c_minus
-SHA1 11389c882ddfd99886c83350ca170c7782ec560a lib/B/Stats.pm
-SHA1 3081c4f7d17bcaa15d0158dba2e8d4e122cff6fb lib/B/Stats/Minus.pm
-SHA1 3c24118ff3adcda94150cad8cb95b58ee2a9f03a t/compile.t
-SHA1 b11ff24e869548a47cef4eb19572842a1f38f10c t/options.t
-SHA1 123dd94701cdb3d2daa885f6e3af75644d842f7b t/table.t
+SHA1 eec8f664674bedb1b4082df33129ef277dd8b1fd Stats.xs
+SHA1 e6ab0f8a8eb74b7144362619840464be2525353b blog.txt
+SHA1 c3c000e1879fbb588101cfe1ad3442590d86a035 c_minus
+SHA1 4259a4341e95dbdec392f054523016f710ca9a61 lib/B/Stats.pm
+SHA1 65da7dbd237a1f225a35b108a2f7c36b3f249158 lib/B/Stats/Minus.pm
+SHA1 18d3812b22b3afc420ab14a334785caf86e8167d t/compile.t
+SHA1 9f0ac756ef73ec028afcd37f9cbb7e6f40b09073 t/options.t
+SHA1 01a9a4566f692b0fc11d35ed5552da9fcf779435 t/table.t
 SHA1 6caab67575bbd3e400e447cc3487dd52e264630b t/test.pl
 -----BEGIN PGP SIGNATURE-----
-Version: GnuPG v1.4.12 (GNU/Linux)
+Version: GnuPG v1
 
-iEYEARECAAYFAk+hQ6QACgkQmm2SYo/9yUJvyQCfQX9doc0DQM3+Lk49NnoKBPz2
-SoIAniEG9niuW5R36EtlreHj1oQQlaeS
-=atX+
+iEYEARECAAYFAlNyzXQACgkQmm2SYo/9yUJpZwCgkwo20UcSxPcrfwa8v/HHV/MW
+2S8An2z2MUv4eDr94nRZ1Nfcu4CUL4fD
+=kHq3
 -----END PGP SIGNATURE-----
