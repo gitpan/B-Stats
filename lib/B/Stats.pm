@@ -1,9 +1,10 @@
 package B::Stats;
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 # TODO
 # exact: probably use Opcodes and DynaLoader at BEGIN for c_minus.
 # less overhead: do more in XS: _class, _count_op, _walkoptree_simple, _walksymtable
+# detect -E usage, features overhead
 
 =head1 NAME
 
@@ -271,9 +272,17 @@ sub compile {
   }
 }
 
-=item rcount (opcode)
+=item rcount ($opcode)
 
 Returns run-time count per op type.
+
+=item rcount_all()
+
+Returns an AV ref for all opcounts, indexed by opcode.
+
+=item reset_rcount()
+
+Resets to opcount array for all ops to 0
 
 =item output ($count-hash, $ops, $name)
 
@@ -339,17 +348,14 @@ Prepares count hash from the runtime generated structure in XS and calls output(
 
 sub output_runtime {
   $r_count = {};
-
-  require DynaLoader;
-  our @ISA = ('DynaLoader');
-  DynaLoader::bootstrap('B::Stats', $VERSION);
+  my $r_countarr = $_[0];
 
   require Opcodes;
   my $maxo = Opcodes::opcodes();
   # @optype only since 5.8.9 in B
   my @optype = qw(OP UNOP BINOP LOGOP LISTOP PMOP SVOP PADOP PVOP LOOP COP);
   for my $i (0..$maxo-1) {
-    if (my $count = rcount($i)) {
+    if (my $count = $r_countarr->[$i]) {
       my $name = Opcodes::opname($i);
       if ($name) {
 	my $class = $optype[ Opcodes::opclass($i) ];
@@ -418,7 +424,7 @@ CHECK {
   compile->() if !$compiled and $opt{c};
 }
 
-END {
+sub _end { #void _end($refToArrOfRuntimeCounts)
   $c_count = $static;
   if ($opt{e}) {
     $nops = 0;
@@ -427,10 +433,22 @@ END {
     output($static, $nops, 'static end-time');
     $e_count = $static;
   }
-  output_runtime() if $opt{r};
+  output_runtime($_[0]) if $opt{r};
   if ( $opt{t} and ($] < 5.014 or ${^GLOBAL_PHASE} ne 'DESTRUCT') ) {
     output_table($c_count, $e_count, $r_count);
   }
 }
 
+=head1 LICENSE
+
+This module is available under the same licences as perl, the Artistic
+license and the GPL.
+
+=head1 SEE ALSO
+
+
+
+=cut
+
+XSLoader::load 'B::Stats', $VERSION;
 1;
