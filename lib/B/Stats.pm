@@ -1,5 +1,5 @@
 package B::Stats;
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 # TODO
 # exact: probably use Opcodes and DynaLoader at BEGIN for c_minus.
@@ -127,8 +127,9 @@ sub import {
     # taking multiple arguments: -ffilter
     if (/^-?f(.*)$/) {
       my $arg = $1;
-      if ($arg =~ /^[A-Z]*OP$/) {
-	my @optype = qw(OP UNOP BINOP LOGOP LISTOP PMOP SVOP PADOP PVOP LOOP COP);
+      if ($arg =~ /^[A-Z_]*OP$/) {
+        my @optype = qw(BASEOP UNOP BINOP LOGOP LISTOP PMOP SVOP PADOP PVOP_OR_SVOP
+                        LOOP COP BASEOP_OR_UNOP FILESTATOP LOOPEXOP);
 	$opt{f}->{class}->{$arg} = 1;
 	die "invalid B::Stats,-fOPCLASS argument: $arg\n"
 	  unless grep {$arg eq $_} @optype;
@@ -173,14 +174,14 @@ sub _count_op {
   $nops++; # count also null ops
   if ($$op) {
     $static->{name}->{$op->name}++;
-    $static->{class}->{_class($op)}++;
+    # $static->{class}->{_class($op)}++;
   }
 }
 
 # collect subs and stashes before B is loaded
 # XXX not yet used. we rather use B::Stats::Minus
 sub _collect_env {
-  %B_env = { 'B::Stats' => 1};
+  %B_env = { 'B::Stats' => 1 };
   _xs_collect_env() if $INC{'DynaLoader.pm'};
 }
 
@@ -310,11 +311,11 @@ sub output {
     close IN;
   }
   for (qw(_files _lines _ops)) {
-    $B::Stats::Minus::overhead{$key}{$_} = 0 unless $B::Stats::Minus::overhead{$key}{$_};
+    $B::Stats::Minus::overhead->{$key}{$_} = 0 unless $B::Stats::Minus::overhead->{$key}{$_};
   }
-  $files -= $B::Stats::Minus::overhead{$key}{_files};
-  $lines -= $B::Stats::Minus::overhead{$key}{_lines};
-  $ops -= $B::Stats::Minus::overhead{$key}{_ops};
+  $files -= $B::Stats::Minus::overhead->{$key}{_files};
+  $lines -= $B::Stats::Minus::overhead->{$key}{_lines};
+  $ops -= $B::Stats::Minus::overhead->{$key}{_ops};
   print $LOG "\nB::Stats $name:\nfiles=$files\tlines=$lines\tops=$ops\n";
   return if $opt{t} and $opt{u};
 
@@ -323,19 +324,40 @@ sub output {
        keys %{$count->{name}}) {
     my $l = length $_;
     my $c = $count->{name}->{$_};
-    $c -= $B::Stats::Minus::overhead{$key}{$_} if exists $B::Stats::Minus::overhead{$key}{$_};
+    $c -= $B::Stats::Minus::overhead->{$key}{$_} if exists $B::Stats::Minus::overhead->{$key}{$_};
+    $count->{name}->{$_} = $c;
     next if $opt{f} and !$opt{f}->{name}->{$_};
+    next if !$c;
     print $LOG $_, " " x (10-$l), "\t", $c, "\n";
   }
+  # FIXME: no OPCLASS overhead substraction
   unless ($opt{u}) {
     print $LOG "\nop class:\n";
+
+    require Opcodes;
+    my $maxo = Opcodes::opcodes();
+    my @optype = qw(BASEOP UNOP BINOP LOGOP LISTOP PMOP SVOP PADOP PVOP_OR_SVOP
+                    LOOP COP BASEOP_OR_UNOP FILESTATOP LOOPEXOP);
+    for my $i (0..$maxo-1) {
+      my $name = Opcodes::opname($i);
+      if ($name) {
+        my $class = $optype[ Opcodes::opclass($i) ];
+        next if $opt{f} and !$opt{f}->{name}->{$name};
+        next if $opt{f} and !$opt{f}->{class}->{$class};
+        $count->{class}->{ $class } += $count->{name}->{ $name };
+      } else {
+        warn "invalid name for opcount[$i]";
+      }
+    }
     for (sort { $count->{class}->{$b} <=> $count->{class}->{$a} }
 	 keys %{$count->{class}}) {
       next if $opt{f} and !$opt{f}->{class}->{$_};
+      next if !$count->{class}->{$_};
       my $l = length $_;
       print $LOG $_, " " x (10-$l), "\t", $count->{class}->{$_}, "\n";
     }
   }
+  $count;
 }
 
 =item output_runtime
@@ -350,10 +372,14 @@ sub output_runtime {
   $r_count = {};
   my $r_countarr = $_[0];
 
+  #require DynaLoader;
+  #our @ISA = ('DynaLoader');
+  #DynaLoader::bootstrap('B::Stats', $VERSION);
   require Opcodes;
   my $maxo = Opcodes::opcodes();
   # @optype only since 5.8.9 in B
-  my @optype = qw(OP UNOP BINOP LOGOP LISTOP PMOP SVOP PADOP PVOP LOOP COP);
+  my @optype = qw(BASEOP UNOP BINOP LOGOP LISTOP PMOP SVOP PADOP PVOP_OR_SVOP
+                  LOOP COP BASEOP_OR_UNOP FILESTATOP LOOPEXOP);
   for my $i (0..$maxo-1) {
     if (my $count = $r_countarr->[$i]) {
       my $name = Opcodes::opname($i);
@@ -363,18 +389,20 @@ sub output_runtime {
 	next if $opt{f} and !$opt{f}->{class}->{$class};
 	$r_count->{name}->{ $name } += $count;
 	$rops += $count;
-	$r_count->{class}->{ $class } += $count;
+	# $r_count->{class}->{ $class } += $count;
       } else {
 	warn "invalid name for opcount[$i]";
       }
     }
   }
-  output($r_count, $rops, 'dynamic run-time');
+  $r_count = output($r_count, $rops, 'dynamic run-time');
 }
 
 =item output_table
 
 -t formatter
+
+Does not work together with -r
 
 =cut
 
@@ -382,27 +410,26 @@ sub _output_tline {
   my $n = shift;
   my $name = $n.(" "x(12-length($n)));
   return if $opt{f} and !$opt{f}->{name}->{$n};
-  print $LOG join("\t",
-		    ($name,
-		     $c_count->{name}->{$n},
+  my ($c, $e, $r) = ($c_count->{name}->{$n},
 		     $e_count->{name}->{$n},
-		     $r_count->{name}->{$n})),
-               "\n";
+		     $r_count->{name}->{$n});
+  return if !$c and !$e and !$r;
+  print $LOG join("\t", ($name, $c, $e, $r)), "\n";
 }
 
 sub output_table {
-  my ($c, $e, $r) = @_;
   # XXX we have empty runops runs with format.
   #my $x = 0;
   #for (keys %{$r_count->{name}}) {
   #  $x++ if $r_count->{name}->{$_};
   #}
   #return unless $x;
-  print "
+  print $LOG "
 B::Stats table:
            	-c	-e	-r
 ";
-  if (%$e_count) {
+  warn "Cannot use -t with -r only\n" if !$opt{c} and !$opt{e};
+  if ($e_count and %$e_count) {
     for (sort { $e_count->{name}->{$b} <=> $e_count->{name}->{$a} }
          keys %{$e_count->{name}}) {
       _output_tline($_);
@@ -430,12 +457,11 @@ sub _end { #void _end($refToArrOfRuntimeCounts)
     $nops = 0;
     $static = {};
     _walkops(\&_count_op);
-    output($static, $nops, 'static end-time');
-    $e_count = $static;
+    $e_count = output($static, $nops, 'static end-time');
   }
   output_runtime($_[0]) if $opt{r};
   if ( $opt{t} and ($] < 5.014 or ${^GLOBAL_PHASE} ne 'DESTRUCT') ) {
-    output_table($c_count, $e_count, $r_count);
+    output_table;
   }
 }
 
@@ -445,8 +471,6 @@ This module is available under the same licences as perl, the Artistic
 license and the GPL.
 
 =head1 SEE ALSO
-
-
 
 =cut
 

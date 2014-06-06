@@ -4,7 +4,7 @@
       "Reini Urban <rurban@cpan.org>"
    ],
    "dynamic_config" : 1,
-   "generated_by" : "ExtUtils::MakeMaker version 6.88, CPAN::Meta::Converter version 2.132830",
+   "generated_by" : "ExtUtils::MakeMaker version 6.86, CPAN::Meta::Converter version 2.120921",
    "license" : [
       "perl_5"
    ],
@@ -47,5 +47,5 @@
          "url" : "git://github.com/rurban/B-Stats.git"
       }
    },
-   "version" : "0.07"
+   "version" : "0.08"
 }
