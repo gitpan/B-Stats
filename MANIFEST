@@ -1,18 +1,19 @@
-.gitignore
 blog.txt
+Changes
 c_minus
-lib/B/Stats.pm
+.gitignore
 lib/B/Stats/Minus.pm
-speed.md
-t/compile.t
-t/options.t
-t/table.t
-t/test.pl
+lib/B/Stats.pm
 LICENSE
 Makefile.PL
 MANIFEST
 README
+speed.md
 Stats.xs
-SIGNATURE                                Public-key signature (added by MakeMaker)
+t/compile.t
+t/options.t
+t/table.t
+t/test.pl
 META.yml                                 Module YAML meta-data (added by MakeMaker)
 META.json                                Module JSON meta-data (added by MakeMaker)
+SIGNATURE                                Public-key signature (added by MakeMaker)
